@@ -15,14 +15,15 @@
 using namespace std;
 
 const int SIZE = 15;
-int board[SIZE][SIZE];//本方1，对方-1，空白0
+// int board[SIZE][SIZE];//本方1，对方-1，空白0
 
 
 
 
 int main()
 {
-	int x, y, n;
+	
+	solve();
 	//恢复目前的棋盘信息
 
 	//cin >> n;
@@ -51,35 +52,7 @@ int main()
 	// int rand_pos = rand() % cnt;
 	// int new_x = avail_x[rand_pos];
 	// int new_y = avail_y[rand_pos];
-
-    vector<vector<int>> Board(BOARD_SIZE,vector<int>(BOARD_SIZE,0));
-	FileSet(Board);
-
-	MCTtree* root = new MCTtree(Board,nullptr);
-
-	if(x == -1 && y == -1){
-		int new_x = 1;
-		int new_y = 2;
-		cout << new_x << ' ' << new_y << endl;
-		return 0;
-	}
-
-	bool isRed = (board[1][2] == 1) ? 1 : 0;
-
-
-    vector<vector<vector<int>>> Distance_Table(4,vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,-1)));
-
-    auto start = clock();
-    bool isR[4] = {true,true,false,false};
-    bool isAX[4] = {true,false,true,false};
-    for(int i = 0;i < 4;i++){
-        Double_Distance(Board,Distance_Table[i],isR[i],isAX[i]);
-    }
-    auto end = clock();
-    cout << double(end - start) << "ms" << endl;
-
-
-
+	// MCTtree* root = new MCTtree(board,nullptr);
 	/***********在上方填充你的代码，决策结果（本方将落子的位置）存入new_x和new_y中****************/
 	/************************************************************************************/
 
