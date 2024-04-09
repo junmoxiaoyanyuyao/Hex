@@ -72,7 +72,7 @@ int main()
 // int dy[6] = {-1,0,1,1,0,-1};
 
 // //ÉùÃ÷
-// class ConnectedGraph;
+
 // void solve();
 // //ÉèÖÃ
 // void FileSet(int &x,int &y);
