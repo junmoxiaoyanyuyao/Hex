@@ -82,7 +82,9 @@ vector<pair<int,int>> generate_move(const MCTtree* t,Player isRed,int lim){
         for(int j = 0;j < BOARD_SIZE;j++){
             if(t->board[i][j] == 0){
                 int value = 0;
-                value = t->Dist[0][i][j] + t->Dist[1][i][j] - t->Dist[2][i][j] - t->Dist[3][i][j];
+                int Rvalue = t->Dist[0][i][j] + t->Dist[1][i][j];
+                int Bvalue = t->Dist[2][i][j] + t->Dist[3][i][j];
+                value =  Rvalue - Bvalue;
                 if(minus){
                     value = -value;
                 }
@@ -250,6 +252,16 @@ void FileSet(vector<vector<int>> &Board,int& x,int& y){
 	}
     cin >> x >> y;
     return;
+}
+
+void BotSet(vector<vector<int>> &board,int& n,int& x,int& y){
+	cin >> n;
+	for (int i = 0; i < n - 1; i++) {
+		cin >> x >> y; if (x != -1) board[x][y] = -1;	//对方
+		cin >> x >> y; if (x != -1) board[x][y] = 1;	//我方
+	}
+	cin >> x >> y;
+	if (x != -1) board[x][y] = -1;	//对方
 }
 
 void judgeRed(const vector<vector<int>>& board,Player& Begin,int x,int y){
