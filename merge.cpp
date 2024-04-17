@@ -1,115 +1,95 @@
 #include <bits/stdc++.h>
 
+// #include "Func.h"
 using namespace std;
 
 const int BOARD_SIZE = 11;
-const int MAX_DISTANCE = 200; //最大距离
-const int MWS = 1; //窗口区间
-const int BRANCH = 8; //分支系数
-const int MAX_DEPTH = 5; //最大搜索深度
-const int C = 2;
-enum Player{red,blue};
-const int dx[6] = {0,-1,-1,0,1,1}; //方向
-const int dy[6] = {-1,0,1,1,0,-1};
-const bool Dist_isRed[4] = {true,true,false,false};
-const bool Dist_isAXIS[4] = {true,false,true,false};
-int RedValue;
-Player player;
-int N = 0;//总共模拟了多少次
-
-class MCTtree;
+const int MAX_DISTANCE = 100;
+const int MAX_DEPTH = 3;
+const int MAX_POTENTIAL = MAX_DISTANCE * MAX_DISTANCE;
+const int M = 100;
+const int WINDOW = 1;
+int DFS_Depth = 1;
+class Position;
 class ConnectedGraph;
-map<vector<vector<int>>,MCTtree*> BoardMap; //换位表
-clock_t time_start,time_end;
+class HeuristicTree;
 
-class MCTtree{
-public:
-	MCTtree* parent;
-	vector<MCTtree*> children;
-	double value;
-	int ni;//每个结点模拟了多少次
-	double ucb;
-    pair<int,int> decision;
-	vector<vector<int>> board;
+map<vector<vector<int>>,HeuristicTree*> Map;
+enum Player{red,blue};
+int dx[6] = {0,-1,-1,0,1,1};
+int dy[6] = {-1,0,1,1,0,-1};
+Player dist_color[4] = {red,red,blue,blue};
+bool dist_if_AXIS[4] = {true,false,true,false};
 
-    vector<pair<int,int>> avail_pos;
-    int cnt;
-	bool hasExpand;
-	ConnectedGraph* RedGraph;
-	ConnectedGraph* BlueGraph;
+vector<vector<int>> board(BOARD_SIZE,vector<int>(BOARD_SIZE,0));
+Player myColor;
+int RedValue;
+clock_t start;
+bool runTimeOut = false;
 
-	MCTtree(MCTtree* Parent);
-	MCTtree(vector<vector<int>>& board);
-	MCTtree(const MCTtree& tree,MCTtree* Parent);
-
-	MCTtree* SelectMaxUCBNode();
-
-	void CalculateUCB();
+class Position{
+    public:
+        int x;
+        int y;
+        int value;
+        Position(){}
+        Position(int X,int Y) : x(X),y(Y),value(0){}
+        Position(int X,int Y,int Value) : x(X),y(Y),value(Value){}
+        Position(const Position& pos) : x(pos.x),y(pos.y),value(pos.value){}
+        bool operator<(const Position& a) const{
+            return this->value < a.value;
+        }
 };
 
-//连通分量
 class ConnectedGraph{
     public:
-    vector<vector<int>> Map;
+    map<Position,int> Connect_Point;
+    map<int,int> BoardMap;
 	vector<bool> AXIS;
 	vector<bool> Far_AXIS;
 
-	ConnectedGraph();
-    ConnectedGraph(const ConnectedGraph* C); //拷贝构造
+	ConnectedGraph(){}
+    ConnectedGraph(const ConnectedGraph& C) :
+    Connect_Point(C.Connect_Point),BoardMap(C.BoardMap),AXIS(C.AXIS),Far_AXIS(C.Far_AXIS){}
 };
 
-ConnectedGraph::ConnectedGraph() : Map(vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,-1))){}
+class HeuristicTree{
+    public:
+        vector<vector<int>> board;
+        HeuristicTree* parent;
+        vector<vector<vector<int>>> Dist;
+        vector<vector<int>> MoveBadness;
+        vector<HeuristicTree*> children;
+        vector<Position> avail_pos;
+        Position pos;
+        ConnectedGraph Graph[2];
+        int min_Potential[2];
+        int min_MoveBadness;
+        int depth;
+        bool expand;
 
-ConnectedGraph::ConnectedGraph(const ConnectedGraph* C) :
-Map(C->Map),AXIS(C->AXIS),Far_AXIS(C->Far_AXIS){}
+        HeuristicTree() :
+        Dist(4,vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,MAX_DISTANCE))),
+        MoveBadness(vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,0))),
+        pos(Position(-1,-1,0)){
+            parent = nullptr;
+            min_Potential[0] = min_Potential[1] = MAX_POTENTIAL;
+            min_MoveBadness = 2 * MAX_POTENTIAL;
+            expand = false;
+        }
+        HeuristicTree(const HeuristicTree& HTree);
+};
 
-MCTtree::MCTtree(vector<vector<int>>& Board) : 
-parent(nullptr),board(Board){
-    value = 0;
-    ni = 0;
-    ucb = INT_MAX;
-    decision = {-1,-1};
-    cnt = 0;
-    hasExpand = false;
-    RedGraph = new ConnectedGraph();
-    BlueGraph = new ConnectedGraph();
+HeuristicTree::HeuristicTree(const HeuristicTree& HTree) :
+board(HTree.board),Dist(HTree.Dist),MoveBadness(HTree.MoveBadness),pos(HTree.pos),Graph{HTree.Graph[0],HTree.Graph[1]}{
+    min_Potential[0] = HTree.min_Potential[0];
+    min_Potential[1] = HTree.min_Potential[1];
+    min_MoveBadness = HTree.min_MoveBadness;
+    expand = true;
 }
 
-MCTtree::MCTtree(MCTtree* Parent) : 
-parent(Parent),board(Parent->board),avail_pos(Parent->avail_pos){
-    value = 0;
-    ni = 0;
-    ucb = INT_MAX;
-    decision = {-1,-1};
-    cnt = Parent->cnt - 1;
-    hasExpand = false;
-    RedGraph = new ConnectedGraph(Parent->RedGraph);
-    BlueGraph = new ConnectedGraph(Parent->BlueGraph);
-}
-
-MCTtree::MCTtree(const MCTtree& tree,MCTtree* Parent) :
-parent(Parent),board(tree.board),avail_pos(tree.avail_pos){
-    value = tree.value;
-    ni = tree.ni;
-    ucb = tree.ucb;
-    decision = tree.decision;
-    cnt = tree.cnt;
-    hasExpand = true;
-    RedGraph = new ConnectedGraph(tree.RedGraph);
-    BlueGraph = new ConnectedGraph(tree.BlueGraph);
-}
-
-
-
-void MCTtree::CalculateUCB() {
-	this->ucb = value / ni;
-    return;
-}
-
-
-
-bool inBoard(pair<int,int> position){
-    return position.first >= 0 && position.first < BOARD_SIZE && position.second >= 0 && position.second < BOARD_SIZE;
+bool inBoard(Position pos){
+    return pos.x >= 0 && pos.x < BOARD_SIZE && pos.y >= 0 && pos.y < BOARD_SIZE;
 }
 
 void BotSet(vector<vector<int>> &board,int& n,int& x,int& y){
@@ -123,780 +103,424 @@ void BotSet(vector<vector<int>> &board,int& n,int& x,int& y){
     return;
 }
 
-void FileSet(vector<vector<int>> &board,int& x,int& y){
-    for(int i = 0;i < BOARD_SIZE;i++){
-        for(int j = 0;j < BOARD_SIZE;j++)
-            cin >> board[i][j];
-    }
-    cin >> x >> y;
-    return;
-}
-
-void judgeRed(const vector<vector<int>>& board,Player& Begin,int x,int y){
+Player judgeRed(const vector<vector<int>>& board){
     RedValue = board[1][2];
-    player = RedValue == 1 ? red : blue;
-    Begin = board[x][y] == RedValue ? blue : red;
+    myColor = RedValue == 1 ? red : blue;
+    return myColor == red ? blue : red;
+}
+
+void make_move(vector<vector<int>>& board,Position pos,Player color){
+    board[pos.x][pos.y] = color == red ? RedValue : -RedValue;
     return;
 }
 
-void make_move(vector<vector<int>>& board,pair<int,int> position,Player isRed){
-    board[position.first][position.second] = isRed == red ? RedValue : -RedValue;
+void undo_move(vector<vector<int>>& board,Position pos){
+    board[pos.x][pos.y] = 0;
     return;
 }
 
-void undo_move(vector<vector<int>>& board,pair<int,int> position){
-    board[position.first][position.second] = 0;
-    return;
-}
-
-void backSpread(MCTtree* t,double value){
-    N++;
-    while(t){
-        t->value += value;
-        t->ni++;
-        t = t->parent;
-    }
-    return;
-}
-
-bool judgeWin(MCTtree* t,Player isRed){
-    if(isRed == red){
-        int len = t->RedGraph->AXIS.size();
-        for(int i = 0;i < len;i++){
-            if(t->RedGraph->AXIS[i] && t->RedGraph->Far_AXIS[i])
-                return true;
-        }
+bool cmp(const Position& a,const Position& b){
+    if(a.value < b.value)
+        return true;
+    else if(a.value > b.value)
         return false;
-    }
-    int len = t->BlueGraph->AXIS.size();
-    for(int i = 0;i < len;i++){
-        if(t->BlueGraph->AXIS[i] && t->BlueGraph->Far_AXIS[i])
+    double d1 = sqrt(pow(a.x - 5,2) + pow(a.y - 5,2));
+    double d2 = sqrt(pow(b.x - 5,2) + pow(b.y - 5,2));
+    return d1 < d2;
+}
+
+bool judgeWin(HeuristicTree* t,Player color){
+    int flag = color == red ? 0 : 1;
+    int len = t->Graph[flag].AXIS.size();
+    for(int i = 0;i < len;i++)
+        if(t->Graph[flag].AXIS[i] && t->Graph[flag].Far_AXIS[i])
             return true;
-    }
     return false;
 }
 
-vector<pair<int,int>> generate_move(const vector<vector<int>>& board,const vector<vector<vector<int>>>& Dist,Player isRed,int lim){   
-    vector<pair<int,pair<int,int>>> pq;
-    bool minus = isRed == red ? false : true;
-    for(int i = 0;i < BOARD_SIZE;i++){
-        for(int j = 0;j < BOARD_SIZE;j++){
-            if(board[i][j] == 0){
-                int value = 0;
-
-                // if(Dist[0][i][j] >= MAX_DISTANCE)
-                //     break;
-                // if(Dist[1][i][j] >= MAX_DISTANCE)
-                //     break;
-                // if(Dist[2][i][j] >= MAX_DISTANCE)
-                //     break;
-                // if(Dist[3][i][j] >= MAX_DISTANCE)
-                //     break;
-
-            
-                int Rvalue = pow(Dist[0][i][j],2) + pow(Dist[1][i][j],2);
-                int Bvalue = pow(Dist[2][i][j],2) + pow(Dist[3][i][j],2);
-                // int Rvalue = sqrt(Dist[0][i][j] * Dist[1][i][j]);
-                // int Bvalue = sqrt(Dist[2][i][j] * Dist[3][i][j]);
-
-                value =  Rvalue + Bvalue;
-                // value = min(Rvalue,Bvalue);
-
-                // if(minus){
-                //     value = -value;
-                // }
-
-                // if(i == 10){
-                //     int k = 0;
-                // }
-
-                // if(minus){
-                //     value = pow(t->Dist[2][i][j],2) + pow(t->Dist[3][i][j],2);
-                // }
-                // else{
-                //     value = pow(t->Dist[0][i][j],2) + pow(t->Dist[1][i][j],2);
-                // }
-                pq.push_back({value,{i,j}});
+Position judgeEdge(int x,int y){
+    Position pos = Position(-1,-1);
+    int k[2][2];
+    bool flag;
+    bool match = false;
+    if(myColor == red){
+        k[0][0] = 4,k[0][1] = 5,k[1][0] = 2,k[1][1] = 1;
+        if(x == 0)
+            flag = false,match = true;
+        else if(x == BOARD_SIZE -1)
+            flag = true,match = true;
+    }
+    else if(myColor == blue){
+        k[0][0] = 2,k[0][1] = 3,k[1][0] = 1,k[1][1] = 5;
+        if(y == 0)
+            flag = false,match = true;
+        else if(y == BOARD_SIZE -1)
+            flag = true,match = true;
+    }
+    if(match){
+        for(int i = 0;i < 2;i++){
+            if(board[x + dx[k[(int)flag][i]]][y + dy[k[(int)flag][i]]] == myColor){
+                Position temp = Position(x + dx[k[(int)(!flag)][i]],y + dy[k[(int)(!flag)][i]]);
+                if(inBoard(temp)){
+                    pos = temp;
+                    return pos;
+                }
             }
         }
     }
-    sort(pq.begin(),pq.end());
-    vector<pair<int,int>> avail_position;
-    int len = pq.size();
-    int i = 0;
-    while(i < len && lim > 0){
-        avail_position.push_back(pq[i].second);
-        i++;
-        lim--;
+
+    match = false;
+    if(myColor == red){
+        if(y == 2){
+            
+        }
     }
-    return avail_position;
+
+END:
+    return pos;
 }
 
-vector<pair<int,int>> get_neighbour(const vector<vector<int>>& board,const vector<vector<int>>& dist,const vector<vector<int>>& visit,bool isRed,pair<int,int> position){
-    vector<pair<int,int>> neighbour;
-    if(dist[position.first][position.second] >= MAX_DISTANCE)
+vector<Position> get_neighbour(const vector<vector<int>>& board,const vector<vector<int>>& dist,const vector<vector<int>>& visit,Player color,Position pos){
+    vector<Position> neighbour;
+    if(dist[pos.x][pos.y] >= MAX_DISTANCE)
         return neighbour;
-    int key = isRed ? RedValue : -RedValue;
-    vector<vector<bool>> vis(BOARD_SIZE,vector<bool>(BOARD_SIZE,false));
-    queue<pair<int,int>> q;
-    q.push(position);
+    int value = color == red ? RedValue : -RedValue;
+    vector<vector<bool>> haveBFS(BOARD_SIZE,vector<bool>(BOARD_SIZE,false));
+    queue<Position> q;
+    q.push(pos);
     while(!q.empty()){
-        auto current_position = q.front();
+        auto current_pos = q.front();
         q.pop();
         for(int i = 0;i < 6;i++){
-            pair<int,int> temp_position = {current_position.first + dx[i],current_position.second + dy[i]};
-            if(!inBoard(temp_position) || visit[temp_position.first][temp_position.second] > 1 || vis[temp_position.first][temp_position.second])
+            Position temp_pos(current_pos.x + dx[i],current_pos.y + dy[i]);
+            if(!inBoard(temp_pos) || visit[temp_pos.x][temp_pos.y] > 1 || haveBFS[temp_pos.x][temp_pos.y])
                 continue;
-            if(board[temp_position.first][temp_position.second] == 0 && dist[temp_position.first][temp_position.second] < MAX_DISTANCE){
-                neighbour.push_back(temp_position);
-                vis[temp_position.first][temp_position.second] = true;
+
+            if(board[temp_pos.x][temp_pos.y] == value){
+                q.push(temp_pos);
+                haveBFS[temp_pos.x][temp_pos.y] = true;
+                neighbour.push_back(temp_pos);
             }
-            else if(board[temp_position.first][temp_position.second] == key){
-                q.push(temp_position);
-                vis[temp_position.first][temp_position.second] = true;
-                neighbour.push_back(temp_position);
+            else if(board[temp_pos.x][temp_pos.y] == 0){
+                neighbour.push_back(temp_pos);
+                haveBFS[temp_pos.x][temp_pos.y] = true;
             }
         }
     }
     return neighbour;
 }
 
-void Double_Distance(const vector<vector<int>>& board,vector<vector<int>>& dist,bool isRed,bool isAXIS){
-    queue<pair<int,int>> BFS_queue;
+void Double_Distance(const vector<vector<int>>& board,vector<vector<int>>& dist,Player color,bool isAXIS){
+    queue<Position> BFS_queue;
     vector<vector<int>> visit(BOARD_SIZE,vector<int>(BOARD_SIZE,0));
-    int key = isRed ? RedValue : -RedValue;
-    if(isRed){
+    int value = color == red ? RedValue : -RedValue;
+    if(color == red){
         int start_line = isAXIS ? 0 : BOARD_SIZE - 1;
         for(int i = 0;i < BOARD_SIZE;i++){
-            if(board[start_line][i] == key){
+            visit[start_line][i] = 2; 
+            if(board[start_line][i] == value){
                 dist[start_line][i] = 0;
-                visit[start_line][i] = 2;            
+                BFS_queue.push(Position(start_line,i));          
             }
             else if(board[start_line][i] == 0){
                 dist[start_line][i] = 1;
-                visit[start_line][i] = 2;             
+                BFS_queue.push(Position(start_line,i));            
             }
             else{
-                dist[start_line][i] = MAX_DISTANCE;
-                visit[start_line][i] = 2;             
-            }
-        }
-
-        for(int i = 0;i < BOARD_SIZE;i++){
-            if(board[start_line][i] == key){
-                if(inBoard({start_line,i - 1}))
-                    dist[start_line][i - 1] = MAX_DISTANCE;
-                if(inBoard({start_line,i + 1}))
-                    dist[start_line][i + 1] = MAX_DISTANCE;
-            }
-        }
-
-        for(int i = 0;i < BOARD_SIZE;i++){
-            vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,{start_line,i});
-            int len = neighbour.size();
-            for(int j = 0;j < len;j++){
-                if(visit[neighbour[j].first][neighbour[j].second] == 0){
-                    visit[neighbour[j].first][neighbour[j].second]++;
-                    dist[neighbour[j].first][neighbour[j].second] = dist[start_line][i] + 1;
-                }
-                else if(visit[neighbour[j].first][neighbour[j].second] == 1){
-                    visit[neighbour[j].first][neighbour[j].second]++;
-                    dist[neighbour[j].first][neighbour[j].second] = max(dist[neighbour[j].first][neighbour[j].second],dist[start_line][i] + 1);
-                    BFS_queue.push({neighbour[j].first,neighbour[j].second});
-                }
+                dist[start_line][i] = MAX_DISTANCE;            
             }
         }
     }
     else{    
         int start_col = isAXIS ? 0 : BOARD_SIZE - 1;
         for(int i = 0;i < BOARD_SIZE;i++){
-            if(board[i][start_col] == key){
+            visit[i][start_col] = 2;
+            if(board[i][start_col] == value){
                 dist[i][start_col] = 0;
-                visit[i][start_col] = 2;             
+                BFS_queue.push(Position(i,start_col));            
             }
             else if(board[i][start_col] == 0){
                 dist[i][start_col] = 1;
-                visit[i][start_col] = 2;             
+                BFS_queue.push(Position(i,start_col));            
             }
             else{
-                dist[i][start_col] = MAX_DISTANCE;
-                visit[i][start_col] = 2; 
-            }
-        }
-
-        for(int i = 0;i < BOARD_SIZE;i++){
-            if(board[i][start_col] == key){
-                if(inBoard({i - 1,start_col}))
-                    dist[i - 1][start_col] = MAX_DISTANCE;
-                if(inBoard({i + 1,start_col}))
-                    dist[i + 1][start_col] = MAX_DISTANCE;
-            }
-        }
-
-        for(int i = 0;i < BOARD_SIZE;i++){
-            vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,{i,start_col});
-            int len = neighbour.size();
-            for(int j = 0;j < len;j++){
-                if(visit[neighbour[j].first][neighbour[j].second] == 0){
-                    visit[neighbour[j].first][neighbour[j].second]++;
-                    dist[neighbour[j].first][neighbour[j].second] = dist[i][start_col] + 1;
-                }
-                else if(visit[neighbour[j].first][neighbour[j].second] == 1){
-                    visit[neighbour[j].first][neighbour[j].second]++;
-                    dist[neighbour[j].first][neighbour[j].second] = max(dist[neighbour[j].first][neighbour[j].second],dist[i][start_col] + 1);
-                    BFS_queue.push({neighbour[j].first,neighbour[j].second});
-                }
+                dist[i][start_col] = MAX_DISTANCE; 
             }
         }
     }
-
     while(!BFS_queue.empty()){
-        auto current_position = BFS_queue.front();
+        auto current_pos = BFS_queue.front();
         BFS_queue.pop();
-        vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,current_position);
+        vector<Position> neighbour = get_neighbour(board,dist,visit,color,current_pos);
         int len = neighbour.size();
         for(int i = 0;i < len;i++){
-            if(visit[neighbour[i].first][neighbour[i].second] == 0){
-                visit[neighbour[i].first][neighbour[i].second]++;
-                dist[neighbour[i].first][neighbour[i].second] = dist[current_position.first][current_position.second] + 1;
+            int addDistance = board[neighbour[i].x][neighbour[i].y] == value ? 0 : 1;;
+            if(visit[neighbour[i].x][neighbour[i].y] == 0){
+                visit[neighbour[i].x][neighbour[i].y]++;
+                dist[neighbour[i].x][neighbour[i].y] = dist[current_pos.x][current_pos.y] + addDistance;
             }
-            else if(visit[neighbour[i].first][neighbour[i].second] == 1){
-                visit[neighbour[i].first][neighbour[i].second]++;
-                dist[neighbour[i].first][neighbour[i].second] = max(dist[neighbour[i].first][neighbour[i].second],dist[current_position.first][current_position.second] + 1);
-                BFS_queue.push({neighbour[i].first,neighbour[i].second});
-            }
-        }
-    }
-
-    for(int i = 0;i < BOARD_SIZE;i++){
-        for(int j = 0;j < BOARD_SIZE;j++){
-            if(visit[i][j] == 0){
-                dist[i][j] = MAX_DISTANCE;
+            else if(visit[neighbour[i].x][neighbour[i].y] == 1){
+                visit[neighbour[i].x][neighbour[i].y]++;
+                dist[neighbour[i].x][neighbour[i].y] = max(dist[neighbour[i].x][neighbour[i].y],dist[current_pos.x][current_pos.y] + addDistance);
+                BFS_queue.push(Position(neighbour[i]));
             }
         }
     }
     return;
 }
 
-
-
-
-// vector<pair<int,int>> get_neighbour(const vector<vector<int>>& board,const vector<vector<int>>& dist,const vector<vector<int>>& visit,bool isRed,pair<int,int> position){
-//     vector<pair<int,int>> neighbour;
-//     if(dist[position.first][position.second] >= MAX_DISTANCE)
-//         return neighbour;
-//     int key = isRed ? RedValue : -RedValue;
-//     vector<vector<bool>> vis(BOARD_SIZE,vector<bool>(BOARD_SIZE,false));
-//     queue<pair<int,int>> q;
-//     q.push(position);
-//     while(!q.empty()){
-//         auto current_position = q.front();
-//         q.pop();
-//         for(int i = 0;i < 6;i++){
-//             pair<int,int> temp_position = {current_position.first + dx[i],current_position.second + dy[i]};
-//             if(!inBoard(temp_position) || visit[temp_position.first][temp_position.second] > 0 || vis[temp_position.first][temp_position.second])
-//                 continue;
-//             if(board[temp_position.first][temp_position.second] == 0 && dist[temp_position.first][temp_position.second] < MAX_DISTANCE){
-//                 neighbour.push_back(temp_position);
-//                 vis[temp_position.first][temp_position.second] = true;
-//             }
-//             else if(board[temp_position.first][temp_position.second] == key){
-//                 q.push(temp_position);
-//                 vis[temp_position.first][temp_position.second] = true;
-//                 neighbour.push_back(temp_position);
-//             }
-//         }
-//     }
-//     return neighbour;
-// }
-
-// void Double_Distance(const vector<vector<int>>& board,vector<vector<int>>& dist,bool isRed,bool isAXIS){
-//     queue<pair<int,int>> BFS_queue;
-//     vector<vector<int>> visit(BOARD_SIZE,vector<int>(BOARD_SIZE,0));
-//     int key = isRed ? RedValue : -RedValue;
-//     if(isRed){
-//         int start_line = isAXIS ? 0 : BOARD_SIZE - 1;
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             if(board[start_line][i] == key){
-//                 dist[start_line][i] = 0;
-//                 visit[start_line][i] = 1;            
-//             }
-//             else if(board[start_line][i] == 0){
-//                 dist[start_line][i] = 1;
-//                 visit[start_line][i] = 1;             
-//             }
-//             else{
-//                 dist[start_line][i] = MAX_DISTANCE;
-//                 visit[start_line][i] = 1;             
-//             }
-//         }
-
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             if(board[start_line][i] == key){
-//                 if(inBoard({start_line,i - 1}))
-//                     dist[start_line][i - 1] = MAX_DISTANCE;
-//                 if(inBoard({start_line,i + 1}))
-//                     dist[start_line][i + 1] = MAX_DISTANCE;
-//             }
-//         }
-
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,{start_line,i});
-//             int len = neighbour.size();
-//             for(int j = 0;j < len;j++){
-//                 if(visit[neighbour[j].first][neighbour[j].second] == 0){
-//                     visit[neighbour[j].first][neighbour[j].second]++;
-//                     dist[neighbour[j].first][neighbour[j].second] = dist[start_line][i] + 1;
-//                     BFS_queue.push({neighbour[j].first,neighbour[j].second});
-//                 }
-//             }
-//         }
-//     }
-//     else{    
-//         int start_col = isAXIS ? 0 : BOARD_SIZE - 1;
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             if(board[i][start_col] == key){
-//                 dist[i][start_col] = 0;
-//                 visit[i][start_col] = 1;             
-//             }
-//             else if(board[i][start_col] == 0){
-//                 dist[i][start_col] = 1;
-//                 visit[i][start_col] = 1;             
-//             }
-//             else{
-//                 dist[i][start_col] = MAX_DISTANCE;
-//                 visit[i][start_col] = 1;  
-//             }
-//         }
-
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             if(board[i][start_col] == key){
-//                 if(inBoard({i - 1,start_col}))
-//                     dist[i - 1][start_col] = MAX_DISTANCE;
-//                 if(inBoard({i + 1,start_col}))
-//                     dist[i + 1][start_col] = MAX_DISTANCE;
-//             }
-//         }
-
-//         for(int i = 0;i < BOARD_SIZE;i++){
-//             vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,{i,start_col});
-//             int len = neighbour.size();
-//             for(int j = 0;j < len;j++){
-//                 if(visit[neighbour[j].first][neighbour[j].second] == 0){
-//                     visit[neighbour[j].first][neighbour[j].second]++;
-//                     dist[neighbour[j].first][neighbour[j].second] = dist[i][start_col] + 1;
-//                     BFS_queue.push({neighbour[j].first,neighbour[j].second});
-//                 }
-//             }
-//         }
-//     }
-
-//     while(!BFS_queue.empty()){
-//         auto current_position = BFS_queue.front();
-//         BFS_queue.pop();
-//         vector<pair<int,int>> neighbour = get_neighbour(board,dist,visit,isRed,current_position);
-//         int len = neighbour.size();
-//         for(int i = 0;i < len;i++){
-//             if(visit[neighbour[i].first][neighbour[i].second] == 0){
-//                 visit[neighbour[i].first][neighbour[i].second]++;
-//                 dist[neighbour[i].first][neighbour[i].second] = dist[current_position.first][current_position.second] + 1;
-//                 BFS_queue.push({neighbour[i].first,neighbour[i].second});
-//             }
-//         }
-//     }
-
-//     for(int i = 0;i < BOARD_SIZE;i++){
-//         for(int j = 0;j < BOARD_SIZE;j++){
-//             if(visit[i][j] == 0){
-//                 dist[i][j] = MAX_DISTANCE;
-//             }
-//         }
-//     }
-//     return;
-// }
-
-
-double board_evaluate(MCTtree* t){
-    vector<vector<vector<int>>> Dist(4,vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,-1)));
-    for(int i = 0;i < 4;i++){
-        Double_Distance(t->board,Dist[i],Dist_isRed[i],Dist_isAXIS[i]);
-    }
-    priority_queue<int,vector<int>,greater<int>> Red,Blue;
-    for(int i = 0;i < BOARD_SIZE;i++){
-        for(int j = 0;j < BOARD_SIZE;j++){
-            if(t->board[i][j] == 0){
-                Red.push(Dist[0][i][j] + Dist[1][i][j]);
-                Blue.push(Dist[2][i][j] + Dist[3][i][j]);
-            }
-        }
-    }
-    while(!Red.empty() && !Blue.empty()){
-        if(Red.top() < Blue.top()){
-            return player == red ? 1 : 0;
-        }
-        else if(Red.top() > Red.top()){
-            return player == red ? 0 : 1;
-        }
-        Red.pop();
-        Blue.pop();
-    }
-    return 0.5;
-
-    // srand(time(0));
-    // int value = rand() % 2;
-    // return (double)value;
-
-    // return 0.5;
-}
-
-void BFS_Connected(const vector<vector<int>>& board,Player isRed,vector<vector<bool>> &visit,int x,int y,ConnectedGraph& CG){
-    int key = isRed == red ? RedValue : -RedValue;
-    
-    int NUM = CG.AXIS.size();
-    queue<pair<int,int>> q;
-    q.push(make_pair(x,y));
+void BFS_Connected(const vector<vector<int>>& board,Player color,vector<vector<bool>> &visit,Position pos,ConnectedGraph& CG){
+    int key = color == red ? RedValue : -RedValue;
+    int index = CG.AXIS.size();
+    queue<Position> q;
+    q.push(pos);
     bool AXIS = false,Far_AXIS = false;
-
+    CG.BoardMap.insert({index,index});
     while(!q.empty()){
-        pair<int,int> point = q.front();
+        Position point = q.front();
         q.pop();
-        visit[point.first][point.second] = true;
-		CG.Map[point.first][point.second] = NUM;
-
-        if(isRed == red){
-            if(point.first == 0)
+        visit[point.x][point.y] = true;
+		CG.Connect_Point.insert({point,index});
+        if(color == red){
+            if(point.x == 0)
                 AXIS = true;
-            else if(point.first == BOARD_SIZE - 1)
+            else if(point.x == BOARD_SIZE - 1)
                 Far_AXIS = true;
         }
         else{
-            if(point.second == 0)
+            if(point.y == 0)
                 AXIS = true;
-            else if(point.second == BOARD_SIZE - 1)
+            else if(point.y == BOARD_SIZE - 1)
                 Far_AXIS = true;                
         }
-
         for(int i = 0;i < 6;i++){
-            int tempX = point.first + dx[i];
-            int tempY = point.second + dy[i];
-            if(inBoard({tempX,tempY}) && board[tempX][tempY] == key && visit[tempX][tempY] == false){
-                q.push({tempX,tempY});
-				visit[tempX][tempY] = true;
-                CG.Map[tempX][tempY] = NUM;
+            Position next_point(point.x + dx[i],point.y + dy[i]);
+            if(inBoard(next_point) && board[next_point.x][next_point.y] == key && visit[next_point.x][next_point.y] == false){
+                q.push(next_point);
+                visit[next_point.x][next_point.y] = true;
             }
         }
     }
-
     CG.AXIS.push_back(AXIS);
     CG.Far_AXIS.push_back(Far_AXIS);
     return;
 }
 
-void BFS_Init(const vector<vector<int>>& board,Player isRed,ConnectedGraph& CG){
-    int key = isRed == red ? RedValue : -RedValue;
+void BFS_Init(const vector<vector<int>>& board,Player color,ConnectedGraph& CG){
+    int key = color == red ? RedValue : -RedValue;
     vector<vector<bool>> vis(BOARD_SIZE,vector<bool>(BOARD_SIZE,false));
     for(int i = 0;i < BOARD_SIZE;i++){
         for(int j = 0;j < BOARD_SIZE;j++){
             if(board[i][j] == key && vis[i][j] == false){
-                BFS_Connected(board,isRed,vis,i,j,CG);
+                BFS_Connected(board,color,vis,Position(i,j),CG);
             }
         }
     }
     return;
 }
 
-void Connected_Unit(MCTtree* t,pair<int,int> pos,Player isRed){
+void Connected_Unit(HeuristicTree* t,Position pos,Player color){
     bool hasUnit = false;
-    int num;
+    int index;
+    int flag = color == red ? 0 : 1;
+    int value = color == red ? RedValue : -RedValue;
     for(int i = 0;i < 6;i++){
-        int tempX = pos.first + dx[i];
-        int tempY = pos.second + dy[i];
-
-        if(!inBoard({tempX,tempY}))
+        Position temp_pos(pos.x + dx[i],pos.y + dy[i]);
+        if(!inBoard(temp_pos) || t->board[temp_pos.x][temp_pos.y] != value)
             continue;
-
-        if(isRed == red && t->board[tempX][tempY] == RedValue){
-            if(!hasUnit){
-                hasUnit = true;
-                num = t->RedGraph->Map[tempX][tempY];
-                t->RedGraph->Map[pos.first][pos.second] = num;
-                if(pos.first == 0)
-                    t->RedGraph->AXIS[num] = true;
-                else if(pos.second == BOARD_SIZE - 1)
-                    t->RedGraph->Far_AXIS[num] = true; 
-            }
-            else{
-                int temp = t->RedGraph->Map[tempX][tempY];
-                for(int n = 0;n < BOARD_SIZE;n++){
-                    for(int m = 0;m < BOARD_SIZE;m++){
-                        if(t->RedGraph->Map[n][m] == temp)
-                            t->RedGraph->Map[n][m] = num;
-                    }
-                }
-                if(t->RedGraph->AXIS[temp]){
-                    t->RedGraph->AXIS[num] = true;
-                }
-                if(t->RedGraph->Far_AXIS[temp]){
-                    t->RedGraph->Far_AXIS[num] = true;
-                }
-            }
-        }
-        else if(isRed == blue && t->board[tempX][tempY] == -RedValue){
-            if(!hasUnit){
-                hasUnit = true;
-                num = t->BlueGraph->Map[tempX][tempY];
-                t->BlueGraph->Map[pos.first][pos.second] = num;
-                if(pos.second == 0)
-                    t->BlueGraph->AXIS[num] = true;
-                else if(pos.second == BOARD_SIZE - 1)
-                    t->BlueGraph->Far_AXIS[num] = true; 
-            }
-            else{
-                int temp = t->BlueGraph->Map[tempX][tempY];
-                for(int n = 0;n < BOARD_SIZE;n++){
-                    for(int m = 0;m < BOARD_SIZE;m++){
-                        if(t->BlueGraph->Map[n][m] == temp)
-                            t->BlueGraph->Map[n][m] = num;
-                    }
-                }
-                if(t->BlueGraph->AXIS[temp]){
-                    t->BlueGraph->AXIS[num] = true;
-                }
-                if(t->BlueGraph->Far_AXIS[temp]){
-                    t->BlueGraph->Far_AXIS[num] = true;
-                }
-            }
-        }
-    }
-
-    if(!hasUnit){
-        if(isRed == red){
-            num = t->RedGraph->AXIS.size();
-            t->RedGraph->Map[pos.first][pos.second] = num;
-            if(pos.first == 0)
-                t->RedGraph->AXIS.push_back(true);
-            else
-                t->RedGraph->AXIS.push_back(false);
-            if(pos.first == BOARD_SIZE - 1)
-                t->RedGraph->Far_AXIS.push_back(true);
-            else
-                t->RedGraph->Far_AXIS.push_back(false);
+        if(!hasUnit){
+            hasUnit = true;
+            auto it = t->Graph[flag].BoardMap.find((t->Graph[flag].Connect_Point.find(temp_pos))->second);
+            index = it->second;
+            t->Graph[flag].Connect_Point.insert({temp_pos,index});
+            if(temp_pos.x == 0)
+                t->Graph[flag].AXIS[index] = true;
+            else if(temp_pos.x == BOARD_SIZE - 1)
+                t->Graph[flag].Far_AXIS[index] = true; 
         }
         else{
-            num = t->BlueGraph->AXIS.size();
-            t->BlueGraph->Map[pos.first][pos.second] = num;
-            if(pos.second == 0)
-                t->BlueGraph->AXIS.push_back(true);
-            else
-                t->BlueGraph->AXIS.push_back(false);
-            if(pos.second == BOARD_SIZE - 1)
-                t->BlueGraph->Far_AXIS.push_back(true);
-            else
-                t->BlueGraph->Far_AXIS.push_back(false);           
+            auto it = t->Graph[flag].BoardMap.find((t->Graph[flag].Connect_Point.find(temp_pos))->second);
+            int temp = it->second;
+            it->second = index;
+            t->Graph[flag].AXIS[index] = t->Graph[flag].AXIS[index] || t->Graph[flag].AXIS[temp];
+            t->Graph[flag].Far_AXIS[index] = t->Graph[flag].Far_AXIS[index] || t->Graph[flag].Far_AXIS[temp];
+        }
+        return;
+    }
+    if(!hasUnit){
+        index = t->Graph[flag].AXIS.size();
+        t->Graph[flag].Connect_Point.insert({pos,index});
+        t->Graph[flag].BoardMap.insert({index,index});
+        if(color == red){
+            t->Graph[flag].AXIS.push_back(pos.x == 0 ? true : false);
+            t->Graph[flag].Far_AXIS.push_back(pos.x == BOARD_SIZE - 1 ? true : false);
+        }
+        else{
+            t->Graph[flag].AXIS.push_back(pos.y == 0 ? true : false);
+            t->Graph[flag].Far_AXIS.push_back(pos.y == BOARD_SIZE - 1 ? true : false);
         }
     }
-
     return;
 }
 
-void get_avail_pos(MCTtree* root){
+
+int evaluate(HeuristicTree* t,Player color){
+    int a[2] = {0,0};
     for(int i = 0;i < BOARD_SIZE;i++){
         for(int j = 0;j < BOARD_SIZE;j++){
-            if(root->board[i][j] == 0){
-                root->cnt++;
-                root->avail_pos.push_back({i,j});
+            if(t->board[i][j] == 0){
+                int temp[2] = {t->Dist[0][i][j] + t->Dist[1][i][j],t->Dist[2][i][j] + t->Dist[3][i][j]};
+                for(int k = 0;k < 2;k++){
+                    if(t->min_Potential[k] == temp[k])
+                        a[k]++;
+                }
             }
         }
     }
-    return;
+    int value;
+    if(color == red)
+        value = M * (t->min_Potential[0] - t->min_Potential[1]) - (a[0] - a[1]);
+    else
+        value = M * (t->min_Potential[1] - t->min_Potential[0]) - (a[1] - a[0]);
+    return value;
 }
 
-MCTtree* Node_Init(MCTtree* parent,pair<int,int> pos,Player isRed){
-    make_move(parent->board,pos,isRed);
-    auto it = BoardMap.find(parent->board);
-    if(it != BoardMap.end()){
-        MCTtree* t = new MCTtree(*(it->second));
-        t->parent = parent;
-        t->decision = pos;
-        undo_move(parent->board,pos);
-        return t;
+HeuristicTree* CreateNode(HeuristicTree* Parent,Position pos,Player color){
+    if(Parent != nullptr){
+        make_move(Parent->board,pos,color);
+        auto Map_it = Map.find(Parent->board);
+        if(Map_it != Map.end()){
+            HeuristicTree* t = new HeuristicTree(*Map_it->second);
+            return t;
+        }
     }
-
-    MCTtree* t = new MCTtree(parent);
-    Connected_Unit(t,pos,isRed);
-    BoardMap.insert({t->board,t});
-    t->decision = pos;
-
-    vector<pair<int,int>>::iterator pos_begin = t->avail_pos.begin();
-    auto pos_end = t->avail_pos.end();
-    for( ;pos_begin != pos_end;pos_begin++){
-        if(*pos_begin == pos)
-            break;
+    HeuristicTree* t;
+    if(Parent != nullptr){
+        t = new HeuristicTree(*Parent);
+        t->parent = Parent;
+        Connected_Unit(t,pos,color);
     }
-    swap(*pos_begin,t->avail_pos[t->cnt]);
-
-    undo_move(parent->board,pos);
+    else{
+        t = new HeuristicTree;
+        t->board = board;
+        BFS_Init(t->board,red,t->Graph[0]);
+        BFS_Init(t->board,blue,t->Graph[1]);
+    }
+    for(int i = 0;i < 4;i++)
+        Double_Distance(t->board,t->Dist[i],dist_color[i],dist_if_AXIS[i]);
+    t->pos.value = evaluate(t,color);
+    for(int i = 0;i < BOARD_SIZE;i++){
+        for(int j = 0;j < BOARD_SIZE;j++){
+            int p[2] = {t->Dist[0][i][j] + t->Dist[1][i][j],t->Dist[2][i][j] + t->Dist[3][i][j]};
+            t->min_Potential[0] = min(t->min_Potential[0],p[0]); 
+            t->min_Potential[1] = min(t->min_Potential[1],p[1]);
+            t->MoveBadness[i][j] = p[0] + p[1];
+            t->min_MoveBadness = min(t->min_MoveBadness,t->MoveBadness[i][j]);
+            if(t->board[i][j] == 0)
+                t->avail_pos.push_back(Position(i,j,t->MoveBadness[i][j]));
+        }
+    }
+    sort(t->avail_pos.begin(),t->avail_pos.end());
+    
+    if(Parent != nullptr)
+        undo_move(Parent->board,pos);
     return t;
 }
 
-void boardPrint(const vector<vector<int>>& board){
-    for(int i = 0; i < BOARD_SIZE;i++){
-        for(int j = 0;j < BOARD_SIZE;j++){
-            cout << board[i][j] << '\t';
-        }
-        cout << endl;
+int DFS(HeuristicTree*t,Player color,int alpha,int beta,int TreeDepth,int& DFS_Depth){
+    if(runTimeOut || (double)(clock() - start) / CLOCKS_PER_SEC > 0.95){
+        runTimeOut = true;
+        return 0;
     }
-    cout << endl;
-    return;
+    if(judgeWin(t,color) || TreeDepth == MAX_DEPTH || t->avail_pos.size() == 0){
+        return evaluate(t,color);
+    }
+    Player next_color = color == red ? blue : red;
+    t->children.push_back(CreateNode(t,t->avail_pos[0],next_color));
+    int best_value = -DFS(t->children[0],next_color,-beta,-alpha,TreeDepth + 1,++DFS_Depth);
+    alpha = best_value;
+    int value;
+    int len = min((int)t->avail_pos.size(),8);
+    for(int i = 1;i < len && t->MoveBadness[t->avail_pos[i].x][t->avail_pos[i].y] - t->min_MoveBadness < 20;i++){
+        t->children.push_back(CreateNode(t,t->avail_pos[i],next_color));
+        value = -DFS(t->children[i],next_color,-alpha - WINDOW,-alpha,TreeDepth + 1,++DFS_Depth);
+        if(value > best_value)
+            if(value > alpha && value < beta)
+                best_value = -DFS(t->children[i],next_color,-beta,-value,TreeDepth + 1,++DFS_Depth);
+        alpha = max(alpha,best_value);
+        if(best_value >= beta)
+            break;
+    }
+    return best_value;
 }
 
-void Expand(MCTtree* t,Player isRed,int depth){
-    if(judgeWin(t,isRed)){
-        double value = (player == isRed) ? 1 : 0;
-        backSpread(t,value);
-        // t->CalculateUCB();
-        return;
+Position SearchInit(Position pos,Player color){
+    HeuristicTree* root = CreateNode(nullptr,pos,color);
+    int v = evaluate(root,color);
+    Player next_color = color == red ? blue : red;
+    Position best_pos = root->avail_pos[0];
+    int value,best_value = INT_MAX;
+    int alpha = INT_MIN,beta = INT_MAX;
+    // cout << (double)(clock() - start) / CLOCKS_PER_SEC << endl;
+    while((double)(clock() - start) / CLOCKS_PER_SEC < 0.9){
+        int len = min((int)root->avail_pos.size(),10);
+        for(int i = 0;i < len && root->avail_pos[i].value - root->min_MoveBadness < 6;i++){
+            root->children.push_back(CreateNode(root,root->avail_pos[i],next_color));
+            // int DFS_Depth = 1;
+            value = (int)(0.5 * DFS(root->children[i],next_color,alpha,beta,1,DFS_Depth) + 0.5 * v);
+            if(value < best_value){
+                alpha = value;
+                best_value = value;
+                best_pos = root->avail_pos[i];
+            }
+        }
     }
-
-    if(t->hasExpand){
-        double value = t->value / t->ni;
-        backSpread(t,value);
-        return;
-    }
-
-    if(depth == MAX_DEPTH){
-        double value = board_evaluate(t);
-        backSpread(t,value);
-        return;
-    }
-
-    int branch = t->cnt / 4;
-    Player nextPlay = isRed == red ? blue : red;
-    for(int i = 0;i < branch;i++){
-        srand(time(0));
-        int rand_pos = rand() % t->cnt;
-        t->children.push_back(Node_Init(t,t->avail_pos[rand_pos],nextPlay));
-
-        Expand(t->children[i],nextPlay,depth + 1);
-        t->hasExpand = true;
-    }
-    return;
+    // cout << (double)(clock() - start) / CLOCKS_PER_SEC << endl;
+    return best_pos;
 }
 
 void solve(){
-    // freopen("D:\\data\\vscode\\hex\\board.txt","r",stdin);
-    int x, y, n;
-    vector<vector<int>> board(BOARD_SIZE,vector<int>(BOARD_SIZE,0));
+    #ifndef _BOTZONE_ONLINE
+    freopen("D:\\data\\vscode\\hex\\board.txt","r",stdin);
+    #endif
+    start = clock();
+    int x,y,n;
     BotSet(board,n,x,y);
-    //FileSet(board,x,y);
-
     if(x == -1 && y == -1){
-        int new_x = 1;
-        int new_y = 2;
-        cout << new_x << ' ' << new_y << endl;
-        return;
-	}
-
-    Player Begin;
-    judgeRed(board,Begin,x,y);
-    time_start = clock();
-    
-    MCTtree* root = new MCTtree(board);
-
-    vector<vector<vector<int>>> Dist(4,vector<vector<int>>(BOARD_SIZE,vector<int>(BOARD_SIZE,-1)));
-    for(int i = 0;i < 4;i++){
-        Double_Distance(board,Dist[i],Dist_isRed[i],Dist_isAXIS[i]);
-    }
-    BFS_Init(root->board,red,*(root->RedGraph));
-    BFS_Init(root->board,blue,*(root->BlueGraph)); 
-    get_avail_pos(root);
-
-    vector<pair<int,int>> avail_pos = generate_move(board,Dist,Begin,BRANCH);
-
-    if(n < 5){
-        cout << avail_pos[0].first << ' ' << avail_pos[0].second << endl;
+        cout << 1 << ' ' << 2 << endl;
         return;
     }
-
-    for(int i = 0;i < avail_pos.size();i++){
-        root->children.push_back(Node_Init(root,avail_pos[i],Begin));
-        Expand(root->children[i],Begin,1);
+    if(x == 1 && y == 2){
+        cout << 5 << ' ' << 5 << endl;
+        return;        
     }
-
-    time_end = clock();
-    // cout << (double)time_end - time_start << endl; 
-
-
-    pair<int,int> pos = root->children[0]->decision;
-    double value = 0;
-    for(auto i : root->children){
-        if(i->ni == 0)
-            continue;
-        i->CalculateUCB();
-        if(i->ucb > value){
-            value = i->ucb;
-            pos = i->decision;
+    if(n == 2 && myColor == red){
+        // if(x == 7 && y == 3){
+        //     cout << 6 << ' ' << 5 << endl;
+        //     return;
+        // }
+        if(x > 5 && y < 5){
+            cout << x - 1 << ' ' << y + 2 << endl;
+            return;
+        }
+        else if(y >= 5 && board[7][3] == 0){
+            cout << 7 << ' ' << 3 << endl;
+            return;
         }
     }
-    cout << pos.first << ' ' << pos.second << endl;
+    Position pre_pos(x,y);
+    Player pcolor = judgeRed(board);
+    Position best_pos = judgeEdge(x,y);
+    if(best_pos.x != -1){
+        cout << best_pos.x << ' ' << best_pos.y << endl;
+        return;
+    }
+    best_pos = SearchInit(pre_pos,pcolor);
+    cout << best_pos.x << ' ' << best_pos.y << endl;
     return;
-}
+} 
 
 int main(){
     solve();
-	return 0;
+    return 0;
 }
-
-
-
-// double Expand(MCTtree* t,double alpha,double beta,int depth,Player isRed){
-//     if(judgeWin(t,isRed)){
-//         double value = (player == isRed) ? 1 : 0;
-//         backSpread(t,value);
-//         t->CalculateUCB();
-//         return t->ucb;
-//     }
-
-//     if(depth == MAX_DEPTH){
-//         backSpread(t,board_evaluate(t->board,t->Dist));
-//         t->CalculateUCB();
-//         return t->ucb;
-//     }
-
-//     Player nextPlay = isRed == red ? blue : red;
-//     vector<pair<int,int>> avail_pos = generate_move(t,nextPlay,BRANCH);
-//     int len = avail_pos.size();
-//     if(isRed == blue){
-//         for(int i = 0;i < len;i++){
-//             t->children.push_back(Node_Init(t,avail_pos[i],nextPlay));
-//             N++;
-//             if(t->children[i]->hasExpand){
-//                 alpha = max(alpha,t->children[i]->ucb);
-//             }
-//             else
-//                 alpha = max(alpha,Expand(t->children[i],alpha,beta,depth + 1,nextPlay));
-//             if(alpha >= beta){
-//                 break;
-//             }
-//         }
-//         t->ni++;
-//         t->CalculateUCB();
-//         alpha = max(alpha,t->ucb);
-//         t->value += alpha;
-
-//         return alpha;
-//     }
-//     else{
-//         for(int i = 0;i < len;i++){
-//             t->children.push_back(Node_Init(t,avail_pos[i],nextPlay));
-//             beta = min(beta,Expand(t->children[i],alpha,beta,depth + 1,nextPlay));
-//             if(alpha >= beta){
-//                 break;
-//             }
-//         }
-//         t->ni++;
-//         t->value += beta;
-
-//         return beta;
-//     }
-// }

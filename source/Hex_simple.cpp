@@ -23,7 +23,7 @@ const int SIZE = 15;
 int main()
 {
 	
-	solve();
+	// solve();
 	//恢复目前的棋盘信息
 
 	//cin >> n;
