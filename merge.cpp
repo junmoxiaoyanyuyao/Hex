@@ -1,13 +1,13 @@
 #include <bits/stdc++.h>
 
-// #include "Func.h"
 using namespace std;
 
+#define Ladder_Err INT_MAX
 const int BOARD_SIZE = 11;
 const int MAX_DISTANCE = 100;
-const int MAX_DEPTH = 3;
+const int MAX_DEPTH = 2;
 const int MAX_POTENTIAL = MAX_DISTANCE * MAX_DISTANCE;
-const int M = 100;
+const int M = 2;
 const int WINDOW = 1;
 int DFS_Depth = 1;
 class Position;
@@ -120,13 +120,14 @@ void undo_move(vector<vector<int>>& board,Position pos){
 }
 
 bool cmp(const Position& a,const Position& b){
-    if(a.value < b.value)
-        return true;
-    else if(a.value > b.value)
-        return false;
-    double d1 = sqrt(pow(a.x - 5,2) + pow(a.y - 5,2));
-    double d2 = sqrt(pow(b.x - 5,2) + pow(b.y - 5,2));
-    return d1 < d2;
+    return a.value < b.value;
+    // if(a.value < b.value)
+    //     return true;
+    // else if(a.value > b.value)
+    //     return false;
+    // double d1 = (pow(a.x - 5,2) + pow(a.y - 5,2));
+    // double d2 = (pow(b.x - 5,2) + pow(b.y - 5,2));
+    // return d1 < d2;
 }
 
 bool judgeWin(HeuristicTree* t,Player color){
@@ -144,14 +145,14 @@ Position judgeEdge(int x,int y){
     bool flag;
     bool match = false;
     if(myColor == red){
-        k[0][0] = 4,k[0][1] = 5,k[1][0] = 2,k[1][1] = 1;
+        k[0][0] = 4,k[0][1] = 5,k[1][0] = 1,k[1][1] = 2;
         if(x == 0)
             flag = false,match = true;
         else if(x == BOARD_SIZE -1)
             flag = true,match = true;
     }
-    else if(myColor == blue){
-        k[0][0] = 2,k[0][1] = 3,k[1][0] = 1,k[1][1] = 5;
+    else{
+        k[0][0] = 2,k[0][1] = 3,k[1][0] = 0,k[1][1] = 5;
         if(y == 0)
             flag = false,match = true;
         else if(y == BOARD_SIZE -1)
@@ -159,25 +160,64 @@ Position judgeEdge(int x,int y){
     }
     if(match){
         for(int i = 0;i < 2;i++){
-            if(board[x + dx[k[(int)flag][i]]][y + dy[k[(int)flag][i]]] == myColor){
-                Position temp = Position(x + dx[k[(int)(!flag)][i]],y + dy[k[(int)(!flag)][i]]);
-                if(inBoard(temp)){
-                    pos = temp;
-                    return pos;
+            Position temp = Position(x + dx[k[(int)(flag)][i]],y + dy[k[(int)(flag)][i]]);
+            if(inBoard(Position(temp)) && board[temp.x][temp.y] == ((myColor == red) ? RedValue : -RedValue)){
+                Position p = Position(temp.x + dx[k[(int)(!flag)][i]],temp.y + dy[k[(int)(!flag)][i]]);
+                if(inBoard(p) && board[p.x][p.y] == 0)
+                    return p;
+            }
+        }
+    }
+
+    // match = false;
+    // if(myColor == red){
+    //     if(y == 2){
+            
+    //     }
+    // }
+
+END:
+    return pos;
+}
+
+int judgeLadder(const vector<vector<int>>& board,Position pos,Player color){
+
+    vector<vector<vector<int>>> dir{
+        {{1,2},{5,4}},
+        {{0,5},{2,3}}
+    }; //color AXIS en
+    int nei[2][2] = {{0,3},{1,4}};
+    int nnei[2][2][2] = {
+        {{2,4},{1,5}},
+        {{5,3},{0,2}}
+    };
+    int value = color == red ? RedValue : -RedValue;
+    for(int i = 0;i < 2;i++){
+        Position neighbour = Position(pos.x + dx[nei[color][i]],pos.y + dy[nei[color][i]]);
+        if(inBoard(neighbour) && board[neighbour.x][neighbour.y] == value){
+            for(int j = 0;j < 2;j++){
+                if(inBoard(Position(neighbour.x + dx[dir[color][j][0]],neighbour.y + dy[dir[color][j][0]]))
+                && board[neighbour.x + dx[dir[color][j][0]]][neighbour.y + dy[dir[color][j][0]]] == -value
+                && inBoard(Position(neighbour.x + dx[dir[color][j][1]],neighbour.y + dy[dir[color][j][1]]))
+                && board[neighbour.x + dx[dir[color][j][1]]][neighbour.y + dy[dir[color][j][1]]] == -value){
+                    Position temp1 = Position(pos.x + dx[nnei[color][i][j]],pos.y + dy[nnei[color][i][j]]);
+                    Position temp2 = Position(pos.x + dx[nei[color][i ^ 1]],pos.y + dy[nei[color][i ^ 1]]);
+                    while(inBoard(temp1) && inBoard(temp2)){
+                        if(board[temp1.x][temp1.y] == -value || board[temp2.x][temp2.y] == -value)
+                            return Ladder_Err;
+                        if(board[temp1.x][temp1.y] == value || board[temp2.x][temp2.y] == value)
+                            return true;
+                        temp1 = Position(temp1.x + dx[nei[color][i ^ 1]],temp1.y + dy[nei[color][i ^ 1]]);
+                        temp2 = Position(temp2.x + dx[nei[color][i ^ 1]],temp2.y + dy[nei[color][i ^ 1]]);
+                    }
+                    return Ladder_Err;
                 }
             }
         }
     }
 
-    match = false;
-    if(myColor == red){
-        if(y == 2){
-            
-        }
-    }
 
-END:
-    return pos;
+    return true;
 }
 
 vector<Position> get_neighbour(const vector<vector<int>>& board,const vector<vector<int>>& dist,const vector<vector<int>>& visit,Player color,Position pos){
@@ -264,6 +304,12 @@ void Double_Distance(const vector<vector<int>>& board,vector<vector<int>>& dist,
                 dist[neighbour[i].x][neighbour[i].y] = max(dist[neighbour[i].x][neighbour[i].y],dist[current_pos.x][current_pos.y] + addDistance);
                 BFS_queue.push(Position(neighbour[i]));
             }
+        }
+    }
+    for(int i = 0;i < BOARD_SIZE;i++){
+        for(int j = 0;j < BOARD_SIZE;j++){
+            if(visit[i][j] < 2)
+                dist[i][j] = MAX_DISTANCE;
         }
     }
     return;
@@ -408,7 +454,7 @@ HeuristicTree* CreateNode(HeuristicTree* Parent,Position pos,Player color){
     }
     for(int i = 0;i < 4;i++)
         Double_Distance(t->board,t->Dist[i],dist_color[i],dist_if_AXIS[i]);
-    t->pos.value = evaluate(t,color);
+    // t->pos.value = evaluate(t,color);
     for(int i = 0;i < BOARD_SIZE;i++){
         for(int j = 0;j < BOARD_SIZE;j++){
             int p[2] = {t->Dist[0][i][j] + t->Dist[1][i][j],t->Dist[2][i][j] + t->Dist[3][i][j]};
@@ -417,64 +463,87 @@ HeuristicTree* CreateNode(HeuristicTree* Parent,Position pos,Player color){
             t->MoveBadness[i][j] = p[0] + p[1];
             t->min_MoveBadness = min(t->min_MoveBadness,t->MoveBadness[i][j]);
             if(t->board[i][j] == 0)
-                t->avail_pos.push_back(Position(i,j,t->MoveBadness[i][j]));
+                t->avail_pos.push_back(Position(i,j,p[0] + p[1]));
         }
     }
-    sort(t->avail_pos.begin(),t->avail_pos.end());
+    sort(t->avail_pos.begin(),t->avail_pos.end(),cmp);
     
     if(Parent != nullptr)
         undo_move(Parent->board,pos);
     return t;
 }
 
-int DFS(HeuristicTree*t,Player color,int alpha,int beta,int TreeDepth,int& DFS_Depth){
-    if(runTimeOut || (double)(clock() - start) / CLOCKS_PER_SEC > 0.95){
-        runTimeOut = true;
-        return 0;
+int DFS(HeuristicTree*t,Player color,int TreeDepth,int& DFS_Depth){
+    // if(runTimeOut || (double)(clock() - start) / CLOCKS_PER_SEC > 0.95){
+    //     runTimeOut = true;
+    //     return 0;
+    // }
+    if(judgeWin(t,color)){
+        return INT_MIN;
     }
-    if(judgeWin(t,color) || TreeDepth == MAX_DEPTH || t->avail_pos.size() == 0){
+    if(TreeDepth == MAX_DEPTH || t->avail_pos.size() == 0){
         return evaluate(t,color);
     }
     Player next_color = color == red ? blue : red;
     t->children.push_back(CreateNode(t,t->avail_pos[0],next_color));
-    int best_value = -DFS(t->children[0],next_color,-beta,-alpha,TreeDepth + 1,++DFS_Depth);
-    alpha = best_value;
+    int best_value = DFS(t->children[0],next_color,TreeDepth + 1,++DFS_Depth);
+    int best_i = 0;
     int value;
     int len = min((int)t->avail_pos.size(),8);
-    for(int i = 1;i < len && t->MoveBadness[t->avail_pos[i].x][t->avail_pos[i].y] - t->min_MoveBadness < 20;i++){
+    for(int i = 1;i < len;i++){
         t->children.push_back(CreateNode(t,t->avail_pos[i],next_color));
-        value = -DFS(t->children[i],next_color,-alpha - WINDOW,-alpha,TreeDepth + 1,++DFS_Depth);
-        if(value > best_value)
-            if(value > alpha && value < beta)
-                best_value = -DFS(t->children[i],next_color,-beta,-value,TreeDepth + 1,++DFS_Depth);
-        alpha = max(alpha,best_value);
-        if(best_value >= beta)
-            break;
+        value = DFS(t->children[i],next_color,TreeDepth + 1,++DFS_Depth);
+        if(color == myColor){
+            if(value > best_value){
+                best_value = value;
+                best_i = i;
+            }
+        }
+        else{
+            if(value < best_value){
+                best_value = value;
+                best_i = i;
+            }
+        }
     }
+    // make_move(t->board,t->avail_pos[best_i],next_color);
+    // int v = evaluate(t,color);
+    // undo_move(t->board,t->avail_pos[best_i]);
     return best_value;
 }
 
-Position SearchInit(Position pos,Player color){
+
+Position SearchInit(Position pos,Player color){ 
     HeuristicTree* root = CreateNode(nullptr,pos,color);
-    int v = evaluate(root,color);
     Player next_color = color == red ? blue : red;
     Position best_pos = root->avail_pos[0];
     int value,best_value = INT_MAX;
-    int alpha = INT_MIN,beta = INT_MAX;
     // cout << (double)(clock() - start) / CLOCKS_PER_SEC << endl;
-    while((double)(clock() - start) / CLOCKS_PER_SEC < 0.9){
-        int len = min((int)root->avail_pos.size(),10);
-        for(int i = 0;i < len && root->avail_pos[i].value - root->min_MoveBadness < 6;i++){
+    #ifdef _BOTZONE_ONLINE
+    while((double)(clock() - start) / CLOCKS_PER_SEC < 0.95){
+    #endif
+        int len = min((int)root->avail_pos.size(),8);
+        int index = -1;
+        for(int i = 0;i < len;i++){
+            int v = judgeLadder(root->board,root->avail_pos[i],next_color);
+            if(v == Ladder_Err)
+                continue;
+            index++;
             root->children.push_back(CreateNode(root,root->avail_pos[i],next_color));
-            // int DFS_Depth = 1;
-            value = (int)(0.5 * DFS(root->children[i],next_color,alpha,beta,1,DFS_Depth) + 0.5 * v);
+            // value = DFS(root->children[index],next_color,1,DFS_Depth);
+            if(judgeWin(root->children[index],next_color)){
+                best_pos = root->avail_pos[i];
+                return best_pos;
+            }
+            value = evaluate(root->children[index],next_color) + v;
             if(value < best_value){
-                alpha = value;
                 best_value = value;
                 best_pos = root->avail_pos[i];
             }
         }
+    #ifdef _BOTZONE_ONLINE
     }
+    #endif
     // cout << (double)(clock() - start) / CLOCKS_PER_SEC << endl;
     return best_pos;
 }
@@ -491,7 +560,7 @@ void solve(){
         return;
     }
     if(x == 1 && y == 2){
-        cout << 5 << ' ' << 5 << endl;
+        cout << 7 << ' ' << 3 << endl;
         return;        
     }
     if(n == 2 && myColor == red){
@@ -499,7 +568,7 @@ void solve(){
         //     cout << 6 << ' ' << 5 << endl;
         //     return;
         // }
-        if(x > 5 && y < 5){
+        if(x > 5 && y < 5 && !(x == 8 && y == 1)){
             cout << x - 1 << ' ' << y + 2 << endl;
             return;
         }
